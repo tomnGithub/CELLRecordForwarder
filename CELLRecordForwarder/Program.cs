@@ -20,102 +20,182 @@ public static class Program
 
     private static void RunPatch(IPatcherState<ISkyrimMod, ISkyrimModGetter> state)
     {
-        var lightingMods = _settings.Value.LightingModPlugin.ToHashSet();
+        var lightingMods = _settings.Value.EnableLighting
+            ? _settings.Value.LightingModPlugin.ToHashSet()
+            : new HashSet<ModKey>();
 
-        if (lightingMods.Count == 0)
+        var waterMods = _settings.Value.EnableWater
+            ? _settings.Value.WaterModPlugin.ToHashSet()
+            : new HashSet<ModKey>();
+
+        if (lightingMods.Count == 0 && waterMods.Count == 0)
             return;
-
-        var baseCells = new Dictionary<ModKey, HashSet<FormKey>>();
-
-        foreach (var lightingMod in lightingMods)
-        {
-            var modIndex = state.LoadOrder.IndexOf(lightingMod);
-
-            if (modIndex < 0 || !state.LoadOrder[modIndex].Enabled || state.LoadOrder[modIndex].Mod is null)
-                throw new Exception($"{lightingMod} isn't loaded");
-
-            baseCells[lightingMod] = state.LoadOrder[modIndex].Mod!
-                .EnumerateMajorRecords<ICellGetter>()
-                .Select(x => x.FormKey)
-                .ToHashSet();
-        }
-
-        var cells = new Dictionary<FormKey, ICellGetter>();
-
-        foreach (var mod in state.LoadOrder.ListedOrder)
-        {
-            if (!mod.Enabled || mod.Mod is null)
-                continue;
-
-            var sources = lightingMods
-                .Where(x => mod.ModKey == x || mod.Mod.ModHeader.MasterReferences.Any(m => m.Master == x))
-                .ToArray();
-
-            if (sources.Length == 0)
-                continue;
-
-            foreach (var cell in mod.Mod.EnumerateMajorRecords<ICellGetter>())
-                if (sources.Any(x => baseCells[x].Contains(cell.FormKey)))
-                    cells[cell.FormKey] = cell;
-        }
-
-        var mask = new Cell.TranslationMask(defaultOn: true)
-        {
-            FormKey = false,
-            Landscape = new Landscape.TranslationMask(defaultOn: false, onOverall: false),
-            NavigationMeshes = new NavigationMesh.TranslationMask(defaultOn: false, onOverall: false),
-            Timestamp = false,
-            UnknownGroupData = false,
-            PersistentTimestamp = false,
-            PersistentUnknownGroupData = false,
-            Persistent = false,
-            TemporaryTimestamp = false,
-            TemporaryUnknownGroupData = false,
-            Temporary = false
-        };
 
         var winners = state.LoadOrder.PriorityOrder
             .Cell()
             .WinningContextOverrides(state.LinkCache)
             .ToDictionary(x => x.Record.FormKey);
 
-        var existing = state.PatchMod
+        var patchCells = state.PatchMod
             .EnumerateMajorRecords<ICellGetter>()
-            .Select(x => x.FormKey)
-            .ToHashSet();
+            .ToDictionary(x => x.FormKey);
 
-        var patched = 0;
-
-        foreach (var (formKey, source) in cells)
+        if (lightingMods.Count > 0)
         {
-            if (!winners.TryGetValue(formKey, out var winner) || winner.Record.Equals(source, mask))
-                continue;
+            var baseCells = new Dictionary<ModKey, HashSet<FormKey>>();
 
-            var wasThere = existing.Contains(formKey);
-            var cell = winner.GetOrAddAsOverride(state.PatchMod);
-
-            if (!wasThere)
+            foreach (var lightingMod in lightingMods)
             {
-                cell.Landscape = null;
-                cell.NavigationMeshes.Clear();
-                cell.Persistent.Clear();
-                cell.Temporary.Clear();
-                cell.Timestamp = 0;
-                cell.UnknownGroupData = 0;
-                cell.PersistentTimestamp = 0;
-                cell.PersistentUnknownGroupData = 0;
-                cell.TemporaryTimestamp = 0;
-                cell.TemporaryUnknownGroupData = 0;
+                var modIndex = state.LoadOrder.IndexOf(lightingMod);
+
+                if (modIndex < 0 || !state.LoadOrder[modIndex].Enabled || state.LoadOrder[modIndex].Mod is null)
+                    throw new Exception($"{lightingMod} isn't loaded");
+
+                baseCells[lightingMod] = state.LoadOrder[modIndex].Mod!
+                    .EnumerateMajorRecords<ICellGetter>()
+                    .Select(x => x.FormKey)
+                    .ToHashSet();
             }
 
-            ((ICellInternal)cell).DeepCopyIn(source, out _, mask);
+            var cells = new Dictionary<FormKey, ICellGetter>();
 
-            if (!wasThere)
-                existing.Add(formKey);
+            foreach (var mod in state.LoadOrder.ListedOrder)
+            {
+                if (!mod.Enabled || mod.Mod is null)
+                    continue;
 
-            patched++;
+                var sources = lightingMods
+                    .Where(x => mod.ModKey == x || mod.Mod.ModHeader.MasterReferences.Any(m => m.Master == x))
+                    .ToArray();
+
+                if (sources.Length == 0)
+                    continue;
+
+                foreach (var cell in mod.Mod.EnumerateMajorRecords<ICellGetter>())
+                    if (sources.Any(x => baseCells[x].Contains(cell.FormKey)))
+                        cells[cell.FormKey] = cell;
+            }
+
+            var mask = new Cell.TranslationMask(defaultOn: true)
+            {
+                FormKey = false,
+                Landscape = new Landscape.TranslationMask(defaultOn: false, onOverall: false),
+                NavigationMeshes = new NavigationMesh.TranslationMask(defaultOn: false, onOverall: false),
+                Timestamp = false,
+                UnknownGroupData = false,
+                PersistentTimestamp = false,
+                PersistentUnknownGroupData = false,
+                Persistent = false,
+                TemporaryTimestamp = false,
+                TemporaryUnknownGroupData = false,
+                Temporary = false
+            };
+
+            var patched = 0;
+
+            foreach (var (formKey, source) in cells)
+            {
+                if (!winners.TryGetValue(formKey, out var winner) || winner.Record.Equals(source, mask))
+                    continue;
+
+                var wasThere = patchCells.ContainsKey(formKey);
+                var cell = winner.GetOrAddAsOverride(state.PatchMod);
+
+                if (!wasThere)
+                {
+                    cell.Landscape = null;
+                    cell.NavigationMeshes.Clear();
+                    cell.Persistent.Clear();
+                    cell.Temporary.Clear();
+                    cell.Timestamp = 0;
+                    cell.UnknownGroupData = 0;
+                    cell.PersistentTimestamp = 0;
+                    cell.PersistentUnknownGroupData = 0;
+                    cell.TemporaryTimestamp = 0;
+                    cell.TemporaryUnknownGroupData = 0;
+                }
+
+                ((ICellInternal)cell).DeepCopyIn(source, out _, mask);
+                patchCells[formKey] = cell;
+                patched++;
+            }
+
+            Console.WriteLine($"Patched {patched} CELL headers");
         }
 
-        Console.WriteLine($"Patched {patched} CELL headers");
+        if (waterMods.Count > 0)
+        {
+            var baseCells = new Dictionary<ModKey, HashSet<FormKey>>();
+
+            foreach (var waterMod in waterMods)
+            {
+                var modIndex = state.LoadOrder.IndexOf(waterMod);
+
+                if (modIndex < 0 || !state.LoadOrder[modIndex].Enabled || state.LoadOrder[modIndex].Mod is null)
+                    throw new Exception($"{waterMod} isn't loaded");
+
+                baseCells[waterMod] = state.LoadOrder[modIndex].Mod!
+                    .EnumerateMajorRecords<ICellGetter>()
+                    .Select(x => x.FormKey)
+                    .ToHashSet();
+            }
+
+            var cells = new Dictionary<FormKey, ICellGetter>();
+
+            foreach (var mod in state.LoadOrder.ListedOrder)
+            {
+                if (!mod.Enabled || mod.Mod is null)
+                    continue;
+
+                var sources = waterMods
+                    .Where(x => mod.ModKey == x || mod.Mod.ModHeader.MasterReferences.Any(m => m.Master == x))
+                    .ToArray();
+
+                if (sources.Length == 0)
+                    continue;
+
+                foreach (var cell in mod.Mod.EnumerateMajorRecords<ICellGetter>())
+                    if (sources.Any(x => baseCells[x].Contains(cell.FormKey)))
+                        cells[cell.FormKey] = cell;
+            }
+
+            var patched = 0;
+
+            foreach (var (formKey, source) in cells)
+            {
+                if (!winners.TryGetValue(formKey, out var winner))
+                    continue;
+
+                var current = patchCells.TryGetValue(formKey, out var patchedCell)
+                    ? patchedCell.WaterEnvironmentMap
+                    : winner.Record.WaterEnvironmentMap;
+
+                if (current == source.WaterEnvironmentMap)
+                    continue;
+
+                var wasThere = patchCells.ContainsKey(formKey);
+                var cell = winner.GetOrAddAsOverride(state.PatchMod);
+
+                if (!wasThere)
+                {
+                    cell.Landscape = null;
+                    cell.NavigationMeshes.Clear();
+                    cell.Persistent.Clear();
+                    cell.Temporary.Clear();
+                    cell.Timestamp = 0;
+                    cell.UnknownGroupData = 0;
+                    cell.PersistentTimestamp = 0;
+                    cell.PersistentUnknownGroupData = 0;
+                    cell.TemporaryTimestamp = 0;
+                    cell.TemporaryUnknownGroupData = 0;
+                }
+
+                cell.WaterEnvironmentMap = source.WaterEnvironmentMap;
+                patchCells[formKey] = cell;
+                patched++;
+            }
+
+            Console.WriteLine($"Patched {patched} CELL water environment maps");
+        }
     }
 }
