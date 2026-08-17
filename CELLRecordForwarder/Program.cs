@@ -19,23 +19,42 @@ public static class Program
 
     private static void RunPatch(IPatcherState<ISkyrimMod, ISkyrimModGetter> state)
     {
-        var lightingMod = _settings.Value.LightingModPlugin;
-        var modIndex = state.LoadOrder.IndexOf(lightingMod);
+        var lightingMods = _settings.Value.LightingModPlugin.ToHashSet();
 
-        if (modIndex < 0 || !state.LoadOrder[modIndex].Enabled || state.LoadOrder[modIndex].Mod is null)
-            throw new Exception($"{lightingMod} isn't loaded");
+        if (lightingMods.Count == 0)
+            return;
 
-        var cells = state.LoadOrder[modIndex].Mod!
-            .EnumerateMajorRecords<ICellGetter>()
-            .ToDictionary(x => x.FormKey);
+        var baseCells = new Dictionary<ModKey, HashSet<FormKey>>();
 
-        foreach (var mod in state.LoadOrder.ListedOrder.Skip(modIndex + 1))
+        foreach (var lightingMod in lightingMods)
         {
-            if (!mod.Enabled || mod.Mod is null || !mod.Mod.ModHeader.MasterReferences.Any(x => x.Master == lightingMod))
+            var modIndex = state.LoadOrder.IndexOf(lightingMod);
+
+            if (modIndex < 0 || !state.LoadOrder[modIndex].Enabled || state.LoadOrder[modIndex].Mod is null)
+                throw new Exception($"{lightingMod} isn't loaded");
+
+            baseCells[lightingMod] = state.LoadOrder[modIndex].Mod!
+                .EnumerateMajorRecords<ICellGetter>()
+                .Select(x => x.FormKey)
+                .ToHashSet();
+        }
+
+        var cells = new Dictionary<FormKey, ICellGetter>();
+
+        foreach (var mod in state.LoadOrder.ListedOrder)
+        {
+            if (!mod.Enabled || mod.Mod is null)
+                continue;
+
+            var sources = lightingMods
+                .Where(x => mod.ModKey == x || mod.Mod.ModHeader.MasterReferences.Any(m => m.Master == x))
+                .ToArray();
+
+            if (sources.Length == 0)
                 continue;
 
             foreach (var cell in mod.Mod.EnumerateMajorRecords<ICellGetter>())
-                if (cells.ContainsKey(cell.FormKey))
+                if (sources.Any(x => baseCells[x].Contains(cell.FormKey)))
                     cells[cell.FormKey] = cell;
         }
 
@@ -96,6 +115,6 @@ public static class Program
             patched++;
         }
 
-        Console.WriteLine($"Patched {patched} CELL headers from {lightingMod}");
+        Console.WriteLine($"Patched {patched} CELL headers");
     }
 }
