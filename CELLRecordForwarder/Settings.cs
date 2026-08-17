@@ -2,13 +2,19 @@ using System.Collections.Generic;
 using Mutagen.Bethesda.Plugins;
 using Mutagen.Bethesda.WPF.Reflection.Attributes;
 
-namespace WeaponSpeedReachForwarder;
+namespace CELLRecordForwarder;
 
 public record Settings
 {
-    [SettingName("Use Reqtificator Settings")]
-    public bool UseReqtificatorSettings = false;
+    [SettingName("Enable Lighting")]
+    public bool EnableLighting = true;
 
-    [SettingName("Weapon Mod Plugin")]
-    public List<ModKey> WeaponModPlugin = new List<ModKey>();
+    [SettingName("Lighting Mod Plugin")]
+    public List<ModKey> LightingModPlugin = new List<ModKey>();
+
+    [SettingName("Enable Water")]
+    public bool EnableWater = true;
+
+    [SettingName("Water Mod Plugin")]
+    public List<ModKey> WaterModPlugin = new List<ModKey>();
 }
