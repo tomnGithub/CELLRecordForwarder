@@ -1,0 +1,13 @@
+{
+  "Nickname": "CELLRecordForwarder",
+  "Visibility": "Visible",
+  "OneLineDescription": "Forwards CELL headers from a configurable lighting mod or the last override that directly masters it.",
+  "LongDescription": "For every CELL overridden by the selected lighting mod, forwards only the CELL record/header from the highest-priority override whose plugin directly lists that lighting mod as a master. If no such override exists, the selected lighting mod itself is used. LAND, NAVM, persistent/temporary placed records, and CELL child groups are not forwarded.",
+  "PreferredAutoVersioning": "Default",
+  "RequiredMods": [],
+  "TargetedReleases": [
+    "SkyrimSE",
+    "SkyrimVR",
+    "SkyrimSEGog"
+  ]
+}
